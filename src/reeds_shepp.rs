@@ -313,7 +313,7 @@ fn lrlrn(x: f64, y: f64, phi: f64) -> (bool, f64, f64, f64) {
     let rho = 0.25 * (2.0 + (xi.powi(2) + eta.powi(2)).sqrt());
 
     if rho <= 1.0 {
-        let u = rho.cos();
+        let u = rho.acos();
         let (t, v) = calc_tau_omega(u, -u, xi, eta, phi);
         if (t >= 0.) & (v <= 0.) {
             return (true, t, u, v);
@@ -328,7 +328,7 @@ fn lrlrp(x: f64, y: f64, phi: f64) -> (bool, f64, f64, f64) {
     let rho = (20. - xi.powi(2) - eta.powi(2)) / 16.0;
 
     if (0.0 < rho) & (rho <= 1.0) {
-        let u = -rho.cos();
+        let u = -rho.acos();
         if u >= -0.5 * PI {
             let (t, v) = calc_tau_omega(u, u, xi, eta, phi);
             if (t >= 0.) & (v >= 0.) {

@@ -127,18 +127,17 @@ def hybrid_astar_planning(
 
     qp = QueuePrior()
     qp.put(calc_index(nstart, P), calc_hybrid_cost(nstart, hmap, P, conf))
+    explored = []
 
     while len(open_set) != 0:
         ind = qp.get()
         n_curr = open_set[ind]
         closed_set[ind] = n_curr
         open_set.pop(ind)
+        explored.append([[n_curr.x[0], n_curr.y[0]], [n_curr.x[-1], n_curr.y[-1]]])
+        rr.log("explored", rr.LineStrips2D(np.array(explored)))
 
         if fpath := update_node_with_analystic_expantion(n_curr, ngoal, P, conf):
-            exps = []
-            for n in closed_set.values():
-                exps.append([[n.x[0], n.y[0]], [n.x[-1], n.y[-1]]])
-            rr.log("explored", rr.LineStrips2D(np.array(exps)))
             return extract_path(closed_set, fpath, nstart)
 
         for i in range(len(steer_set)):
@@ -550,8 +549,7 @@ def design_obstacles(x: int, y: int) -> tuple[list[int], list[int]]:
 
 
 def main():
-    rr.init("hybrid_astar")
-    rr.connect_tcp("172.28.64.1:9876")
+    rr.init("hybrid_astar", spawn=True)
     rr.set_time_seconds("step", 0)
 
     print("hybrid_astar start!")
@@ -579,8 +577,13 @@ def main():
     x, y = 51, 31
     sx, sy, syaw0 = 10.0, 7.0, np.deg2rad(120.0)
     gx, gy, gyaw0 = 45.0, 20.0, np.deg2rad(90.0)
+    rr.log("start", rr.Points2D((sx, sy)))
+    rr.log("goal", rr.Points2D((gx, gy)))
 
     ox, oy = design_obstacles(x, y)
+    rr.log(
+        "obstacles", rr.Boxes2D(sizes=[1, 1] * len(ox), centers=np.array((ox, oy)).T)
+    )
 
     t0 = time.perf_counter()
     path = hybrid_astar_planning(
@@ -607,12 +610,7 @@ def main():
     y = path.y
     yaw = path.yaw
     direction = path.direction
-    rr.log(
-        "obstacles", rr.Boxes2D(sizes=[1, 1] * len(ox), centers=np.array((ox, oy)).T)
-    )
     rr.log("path", rr.LineStrips2D(np.array((x, y)).T))
-    rr.log("start", rr.Points2D((sx, sy)))
-    rr.log("goal", rr.Points2D((gx, gy)))
 
     for k in range(len(x)):
         rr.set_time_seconds("step", k)

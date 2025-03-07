@@ -168,25 +168,26 @@ pub fn hybrid_astar_planning(
         Reverse(NotNan::new(calc_hybrid_cost(&nstart, &hmap, &param, conf)).unwrap()),
         calc_index(&nstart, &param),
     ));
+    let mut explored: Vec<[Vec2; 2]> = Vec::new();
+
     while !open_set.is_empty() {
         let (_, ind) = qp.pop().unwrap();
         if let Some(n_curr) = open_set.remove(&ind) {
             closed_set.insert(ind, n_curr.clone());
+            explored.push([
+                Vec2::new(
+                    *n_curr.x.first().unwrap() as f32,
+                    *n_curr.y.first().unwrap() as f32,
+                ),
+                Vec2::new(
+                    *n_curr.x.last().unwrap() as f32,
+                    *n_curr.y.last().unwrap() as f32,
+                ),
+            ]);
+            let _ = rec.log("explored", &rerun::LineStrips2D::new(explored.clone()));
 
             if let Some(fpath) = update_node_with_analystic_expansion(&n_curr, &ngoal, &param, conf)
             {
-                let exps: Vec<[Vec2; 2]> = closed_set
-                    .clone()
-                    .into_values()
-                    .map(|n| {
-                        [
-                            Vec2::new(*n.x.first().unwrap() as f32, *n.y.first().unwrap() as f32),
-                            Vec2::new(*n.x.last().unwrap() as f32, *n.y.last().unwrap() as f32),
-                        ]
-                    })
-                    .collect();
-                let _ = rec.log("explored", &rerun::LineStrips2D::new(exps));
-
                 return Some(extract_path(&closed_set, &fpath, &nstart));
             }
             for i in 0..steer_set.len() {
@@ -223,17 +224,6 @@ pub fn hybrid_astar_planning(
             }
         }
     }
-    let exps: Vec<[Vec2; 2]> = closed_set
-        .clone()
-        .into_values()
-        .map(|n| {
-            [
-                Vec2::new(*n.x.first().unwrap() as f32, *n.y.first().unwrap() as f32),
-                Vec2::new(*n.x.last().unwrap() as f32, *n.y.last().unwrap() as f32),
-            ]
-        })
-        .collect();
-    let _ = rec.log("explored", &rerun::LineStrips2D::new(exps));
 
     None
 }

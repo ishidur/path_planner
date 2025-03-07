@@ -63,17 +63,16 @@ def astar_planning(
 
     q_priority = []
     heapq.heappush(q_priority, (fvalue(n_start, n_goal), calc_index(n_start, param)))
+    explored = []
 
     while len(open_set) != 0:
         _, ind = heapq.heappop(q_priority)
         n_curr = open_set[ind]
         closed_set[ind] = n_curr
         open_set.pop(ind)
+        explored.append([n_curr.x, n_curr.y])
+        rr.log("explored", rr.Points2D(np.array(explored)))
         if goal_ind == ind:
-            exps = []
-            for n in closed_set.values():
-                exps.append([n.x, n.y])
-            rr.log("explored", rr.Points2D(np.array(exps)))
             pathx, pathy = extract_path(closed_set, n_start, n_goal, param)
             return pathx, pathy
 
@@ -100,11 +99,6 @@ def astar_planning(
                     heapq.heappush(
                         q_priority, (fvalue(node, n_goal), calc_index(node, param))
                     )
-
-    exps = []
-    for n in closed_set.values():
-        exps.append([n.x, n.y])
-    rr.log("explored", rr.Points2D(np.array(exps)))
     return None
 
 
@@ -271,8 +265,7 @@ def get_env() -> tuple[list[int], list[int]]:
 
 
 def main():
-    rr.init("astar")
-    rr.connect_tcp("172.28.64.1:9876")
+    rr.init("astar", spawn=True)
 
     sx = 10.0  # [m]
     sy = 10.0  # [m]

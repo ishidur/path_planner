@@ -88,19 +88,15 @@ pub fn astar_planning(
         Reverse(NotNan::new(fvalue(n_start, n_goal)).unwrap()),
         calc_index(&n_start, &param),
     ));
+    let mut explored: Vec<Vec2> = Vec::new();
 
     while !open_set.is_empty() {
         let (_, ind) = q_priority.pop().unwrap();
         let n_curr = open_set.remove(&ind).unwrap();
         closed_set.insert(ind, n_curr);
+        explored.push(Vec2::new(n_curr.x as f32, n_curr.y as f32));
+        let _ = rec.log("explored", &rerun::Points2D::new(explored.clone()));
         if goal_ind == ind {
-            let exps: Vec<Vec2> = closed_set
-                .clone()
-                .into_values()
-                .map(|n| Vec2::new(n.x as f32, n.y as f32))
-                .collect();
-            let _ = rec.log("explored", &rerun::Points2D::new(exps));
-
             return Some(extract_path(&closed_set, &n_start, &n_goal, &param));
         }
 
@@ -130,13 +126,6 @@ pub fn astar_planning(
             }
         }
     }
-    let exps: Vec<Vec2> = closed_set
-        .clone()
-        .into_values()
-        .map(|n| Vec2::new(n.x as f32, n.y as f32))
-        .collect();
-    let _ = rec.log("explored", &rerun::Points2D::new(exps));
-
     None
 }
 
