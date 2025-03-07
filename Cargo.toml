@@ -1,0 +1,10 @@
+[package]
+name = "hybrid_a_star"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kdtree = "0.7.0"
+ordered-float = "5.0.0"
+rerun = "0.22.1"
+arrow-arith = "54.2.1"
