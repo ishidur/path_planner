@@ -2,6 +2,7 @@
 Hybrid A*
 @author: Huiming Zhou
 https://github.com/zhm-real/MotionPlanning
+with some minor modifications made by Ryota Ishidu
 """
 
 import math

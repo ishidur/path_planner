@@ -1,4 +1,8 @@
 use std::{f64::consts::PI, vec};
+
+use rerun::external::glam::Vec2;
+
+use crate::util::rot2d;
 const MAX_LENGTH: f64 = 1000.0;
 
 #[derive(Clone, Debug)]
@@ -33,6 +37,31 @@ impl RSPath {
         }
     }
 }
+
+pub struct Car {
+    rf: f64, // [m] distance from rear to vehicle front end of vehicle
+    rb: f64, // [m] distance from rear to vehicle back end of vehicle
+    w: f64,  // [m] width of vehicle
+    wd: f64, // [m] distance between left-right wheels
+    pub wb: f64, // [m] Wheel base
+    tr: f64, // [m] Tyre radius
+    tw: f64, // [m] Tyre width
+}
+
+impl Car {
+    pub fn new(rf: f64, rb: f64, w: f64, wd: f64, wb: f64, tr: f64, tw: f64) -> Self {
+        Self {
+            rf,
+            rb,
+            w,
+            wd,
+            wb,
+            tr,
+            tw,
+        }
+    }
+}
+
 pub fn calc_optimal_path(
     sx: f64,
     sy: f64,
@@ -730,4 +759,69 @@ fn m(theta: f64) -> f64 {
     }
 
     phi
+}
+
+pub fn draw_car(x: f64, y: f64, yaw: f64, steer: f64, car: &Car, rec: &rerun::RecordingStream) {
+    let body = [
+        [-car.rb, car.w / 2.],
+        [-car.rb, -car.w / 2.],
+        [car.rf, -car.w / 2.],
+        [car.rf, car.w / 2.],
+        [-car.rb, car.w / 2.],
+    ];
+    let wheel = [
+        [-car.tr, car.tw / 4.],
+        [-car.tr, -car.tw / 4.],
+        [car.tr, -car.tw / 4.],
+        [car.tr, car.tw / 4.],
+        [-car.tr, car.tw / 4.],
+    ];
+    let f_wheel: Vec<(f64, f64)> = wheel.into_iter().map(|p| rot2d(&p, -steer)).collect();
+    let fr_wheel: Vec<(f64, f64)> = f_wheel
+        .clone()
+        .into_iter()
+        .map(|p| (p.0 + car.wb, p.1 - car.wd / 2.))
+        .collect();
+    let fl_wheel: Vec<(f64, f64)> = f_wheel
+        .into_iter()
+        .map(|p| (p.0 + car.wb, p.1 + car.wd / 2.))
+        .collect();
+    let rr_wheel: Vec<(f64, f64)> = wheel
+        .into_iter()
+        .map(|p| (p[0], p[1] - car.wd / 2.))
+        .collect();
+    let rl_wheel: Vec<(f64, f64)> = wheel
+        .into_iter()
+        .map(|p| (p[0], p[1] + car.wd / 2.))
+        .collect();
+    let fr_wheel: Vec<Vec2> = fr_wheel
+        .into_iter()
+        .map(|p| rot2d(&[p.0, p.1], yaw))
+        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
+        .collect();
+    let fl_wheel: Vec<Vec2> = fl_wheel
+        .into_iter()
+        .map(|p| rot2d(&[p.0, p.1], yaw))
+        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
+        .collect();
+    let rr_wheel: Vec<Vec2> = rr_wheel
+        .into_iter()
+        .map(|p| rot2d(&[p.0, p.1], yaw))
+        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
+        .collect();
+    let rl_wheel: Vec<Vec2> = rl_wheel
+        .into_iter()
+        .map(|p| rot2d(&[p.0, p.1], yaw))
+        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
+        .collect();
+    let body: Vec<Vec2> = body
+        .into_iter()
+        .map(|p| rot2d(&p, yaw))
+        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
+        .collect();
+    let _ = rec.log("car/body", &rerun::LineStrips2D::new([body]));
+    let _ = rec.log("car/fr_wheel", &rerun::LineStrips2D::new([fr_wheel]));
+    let _ = rec.log("car/rr_wheel", &rerun::LineStrips2D::new([rr_wheel]));
+    let _ = rec.log("car/fl_wheel", &rerun::LineStrips2D::new([fl_wheel]));
+    let _ = rec.log("car/rl_wheel", &rerun::LineStrips2D::new([rl_wheel]));
 }

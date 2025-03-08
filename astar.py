@@ -1,4 +1,5 @@
 # https://github.com/zhm-real/MotionPlanning
+# with some minor modifications made by Ryota Ishidu
 
 import heapq
 import math
