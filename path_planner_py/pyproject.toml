@@ -1,0 +1,34 @@
+[project]
+name = "path-planner-py"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ryota ishizu" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "heapdict>=1.0.1",
+    "rerun-sdk>=0.22.1",
+    "scipy>=1.15.2",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff.lint]
+select = [
+    # Pyflakes
+    "F",
+    # Pycodestyle
+    "E",
+    "W",
+    # isort
+    "I001"
+]

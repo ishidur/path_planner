@@ -3,8 +3,9 @@
 
 import heapq
 import math
-import numpy as np
 from dataclasses import dataclass
+
+import numpy as np
 import rerun as rr
 
 
@@ -238,55 +239,3 @@ def get_motion():
     motion = [[-1, 0], [-1, 1], [0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1]]
 
     return motion
-
-
-def get_env() -> tuple[list[int], list[int]]:
-    ox, oy = [], []
-
-    for i in range(60):
-        ox.append(i)
-        oy.append(0.0)
-    for i in range(60):
-        ox.append(60.0)
-        oy.append(i)
-    for i in range(61):
-        ox.append(i)
-        oy.append(60.0)
-    for i in range(61):
-        ox.append(0.0)
-        oy.append(i)
-    for i in range(40):
-        ox.append(20.0)
-        oy.append(i)
-    for i in range(40):
-        ox.append(40.0)
-        oy.append(60.0 - i)
-
-    return ox, oy
-
-
-def main():
-    rr.init("astar", spawn=True)
-
-    sx = 10.0  # [m]
-    sy = 10.0  # [m]
-    gx = 50.0  # [m]
-    gy = 50.0  # [m]
-
-    robot_radius = 2.0
-    grid_resolution = 1.0
-    ox, oy = get_env()
-    rr.log("obstacles", rr.Points2D(np.array((ox, oy)).T))
-    rr.log("start", rr.Points2D((sx, sy)))
-    rr.log("goal", rr.Points2D((gx, gy)))
-
-    res = astar_planning(sx, sy, gx, gy, ox, oy, grid_resolution, robot_radius)
-    if res is None:
-        print("Searching failed!")
-        return
-    pathx, pathy = res
-    rr.log("path", rr.LineStrips2D(np.array((pathx, pathy)).T))
-
-
-if __name__ == "__main__":
-    main()

@@ -1,84 +1,81 @@
 # from https://github.com/zhm-real/CurvesGenerator
 # with some minor modifications made by Ryota Ishidu
 
-from math import pi, cos, sin, tan, sqrt, atan2, asin, acos, radians, hypot
+from dataclasses import dataclass
+from math import acos, asin, atan2, cos, hypot, pi, radians, sin, sqrt, tan
+
 import numpy as np
 import rerun as rr
-from dataclasses import dataclass
 
 # parameters initiation
-STEP_SIZE = 0.2
 MAX_LENGTH = 1000.0
 
 
 # class for PATH element
 # @dataclass(frozen=True)
 class RSPath:
-    lengths: list[
+    move_length: list[
         float
     ]  # lengths of each part of path (+: forward, -: backward) [float]
     ctypes: list[str]  # type of each part of the path [string]
-    L: float  # total path length [float]
-    x: list[float]  # final x positions [m]
-    y: list[float]  # final y positions [m]
-    yaw: list[float]  # final yaw angles [rad]
-    directions: list[int]  # forward: 1, backward:-1
+    total_length: float  # total path length [float]
+    traj_x: list[float]  # final x positions [m]
+    traj_y: list[float]  # final y positions [m]
+    traj_yaw: list[float]  # final yaw angles [rad]
+    traj_dirs: list[int]  # forward: 1, backward:-1
 
     def __init__(self, lengths, ctypes, L, x, y, yaw, directions):
-        self.lengths = (
+        self.move_length = (
             lengths  # lengths of each part of path (+: forward, -: backward) [float]
         )
         self.ctypes = ctypes  # type of each part of the path [string]
-        self.L = L  # total path length [float]
-        self.x = x  # final x positions [m]
-        self.y = y  # final y positions [m]
-        self.yaw = yaw  # final yaw angles [rad]
-        self.directions = directions  # forward: 1, backward:-1
+        self.total_length = L  # total path length [float]
+        self.traj_x = x  # final x positions [m]
+        self.traj_y = y  # final y positions [m]
+        self.traj_yaw = yaw  # final yaw angles [rad]
+        self.traj_dirs = directions  # forward: 1, backward:-1
 
 
 @dataclass
 class Car:
-    RF: float  # [m] distance from rear to vehicle front end of vehicle
-    RB: float  # [m] distance from rear to vehicle back end of vehicle
-    W: float  # [m] width of vehicle
-    WD: float  # [m] distance between left-right wheels
-    WB: float  # [m] Wheel base
-    TR: float  # [m] Tyre radius
-    TW: float  # [m] Tyre width
+    center2front: float  # [m] distance from rear to vehicle front end of vehicle
+    center2back: float  # [m] distance from rear to vehicle back end of vehicle
+    width: float  # [m] width of vehicle
+    wheel_base: float  # [m] Wheel base
 
 
-def calc_optimal_path(sx, sy, syaw, gx, gy, gyaw, maxc, step_size=STEP_SIZE):
-    paths = calc_all_paths(sx, sy, syaw, gx, gy, gyaw, maxc, step_size=step_size)
+def calc_optimal_path(sx, sy, syaw, gx, gy, gyaw, maxc, step_size=0.2):
+    paths = calc_all_paths(sx, sy, syaw, gx, gy, gyaw, maxc, step_size)
 
-    minL = paths[0].L
+    minL = paths[0].total_length
     mini = 0
 
     for i in range(len(paths)):
-        if paths[i].L <= minL:
-            minL, mini = paths[i].L, i
+        if paths[i].total_length <= minL:
+            minL, mini = paths[i].total_length, i
 
     return paths[mini]
 
 
-def calc_all_paths(sx, sy, syaw, gx, gy, gyaw, maxc, step_size=STEP_SIZE):
+def calc_all_paths(sx, sy, syaw, gx, gy, gyaw, maxc, step_size):
     q0 = [sx, sy, syaw]
     q1 = [gx, gy, gyaw]
 
     paths = generate_path(q0, q1, maxc)
     for path in paths:
         x, y, yaw, directions = generate_local_course(
-            path.L, path.lengths, path.ctypes, maxc, step_size * maxc
+            path.total_length, path.move_length, path.ctypes, maxc, step_size * maxc
         )
 
         # convert global coordinate
-        path.x = [cos(-q0[2]) * ix + sin(-q0[2]) * iy + q0[0] for (ix, iy) in zip(x, y)]
-        path.y = [
+        path.traj_x = [cos(-q0[2]) * ix + sin(-q0[2]) * iy + q0[0] for (ix, iy) in zip(x, y)]
+        path.traj_y = [
             -sin(-q0[2]) * ix + cos(-q0[2]) * iy + q0[1] for (ix, iy) in zip(x, y)
         ]
-        path.yaw = [pi_2_pi(iyaw + q0[2]) for iyaw in yaw]
-        path.directions = directions
-        path.lengths = [l / maxc for l in path.lengths]
-        path.L = path.L / maxc
+        path.traj_yaw = [pi_2_pi(iyaw + q0[2]) for iyaw in yaw]
+        path.traj_dirs = directions
+        path.move_length = [l / maxc for l in path.move_length]
+        path.total_length = path.total_length / maxc
 
     return paths
 
@@ -89,7 +86,7 @@ def set_path(
     # check same path exist
     for path_e in paths:
         if path_e.ctypes == ctypes:
-            if sum([x - y for x, y in zip(path_e.lengths, lengths)]) <= 0.01:
+            if sum([x - y for x, y in zip(path_e.move_length, lengths)]) <= 0.01:
                 return paths  # not insert path
 
     total_l = sum([abs(i) for i in lengths])
@@ -620,62 +617,21 @@ def M(theta: float) -> float:
     return phi
 
 
-def draw_car(x: float, y: float, yaw: float, steer: float, car: Car):
+def draw_car(x: float, y: float, yaw: float, car: Car):
     body = np.array(
         [
-            [-car.RB, -car.RB, car.RF, car.RF, -car.RB],
-            [car.W / 2, -car.W / 2, -car.W / 2, car.W / 2, car.W / 2],
+            [-car.center2back, -car.center2back, car.center2front, car.center2front, -car.center2back],
+            [car.width / 2, -car.width / 2, -car.width / 2, car.width / 2, car.width / 2],
         ]
     )
-
-    wheel = np.array(
-        [
-            [-car.TR, -car.TR, car.TR, car.TR, -car.TR],
-            [
-                car.TW / 4,
-                -car.TW / 4,
-                -car.TW / 4,
-                car.TW / 4,
-                car.TW / 4,
-            ],
-        ]
-    )
-
-    rlWheel = wheel.copy()
-    rrWheel = wheel.copy()
-    frWheel = wheel.copy()
-    flWheel = wheel.copy()
 
     Rot1 = np.array([[cos(yaw), -sin(yaw)], [sin(yaw), cos(yaw)]])
 
-    Rot2 = np.array([[cos(steer), sin(steer)], [-sin(steer), cos(steer)]])
-
-    frWheel = np.dot(Rot2, frWheel)
-    flWheel = np.dot(Rot2, flWheel)
-
-    frWheel += np.array([[car.WB], [-car.WD / 2]])
-    flWheel += np.array([[car.WB], [car.WD / 2]])
-    rrWheel[1, :] -= car.WD / 2
-    rlWheel[1, :] += car.WD / 2
-
-    frWheel = np.dot(Rot1, frWheel)
-    flWheel = np.dot(Rot1, flWheel)
-
-    rrWheel = np.dot(Rot1, rrWheel)
-    rlWheel = np.dot(Rot1, rlWheel)
     body = np.dot(Rot1, body)
 
-    frWheel += np.array([[x], [y]])
-    flWheel += np.array([[x], [y]])
-    rrWheel += np.array([[x], [y]])
-    rlWheel += np.array([[x], [y]])
     body += np.array([[x], [y]])
 
     rr.log("car/body", rr.LineStrips2D(body.T))
-    rr.log("car/fr_wheel", rr.LineStrips2D(frWheel.T))
-    rr.log("car/rr_wheel", rr.LineStrips2D(rrWheel.T))
-    rr.log("car/fl_wheel", rr.LineStrips2D(flWheel.T))
-    rr.log("car/rl_wheel", rr.LineStrips2D(rlWheel.T))
     rr.log("car/dir", rr.Arrows2D(vectors=(np.cos(yaw), np.sin(yaw)), origins=(x, y)))
 
 
@@ -733,10 +689,10 @@ def main():
 
         path_i = calc_optimal_path(s_x, s_y, s_yaw, g_x, g_y, g_yaw, max_c)
 
-        path_x += path_i.x
-        path_y += path_i.y
-        yaw += path_i.yaw
-        directions += path_i.directions
+        path_x += path_i.traj_x
+        path_y += path_i.traj_y
+        yaw += path_i.traj_yaw
+        directions += path_i.traj_dirs
         rr.log("path", rr.LineStrips2D(np.array([path_x, path_y]).T))
 
     car = Car(
@@ -752,7 +708,7 @@ def main():
     for k in range(len(path_x)):
         if k < len(path_x) - 2:
             dy = (yaw[k + 1] - yaw[k]) / 0.4
-            steer = pi_2_pi(atan2(-car.WB * dy, directions[k]))
+            steer = pi_2_pi(atan2(-car.wheel_base * dy, directions[k]))
         else:
             steer = 0.0
 

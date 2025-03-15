@@ -6,18 +6,19 @@ with some minor modifications made by Ryota Ishidu
 """
 
 import math
-from heapdict import heapdict
-import time
+from dataclasses import dataclass
+
 import numpy as np
 import rerun as rr
+from heapdict import heapdict
 from scipy.spatial import KDTree
-from astar import calc_holonomic_heuristic_with_obstacle
-from reeds_shepp import pi_2_pi, calc_all_paths, RSPath
-from dataclasses import dataclass
+
+from .astar import calc_holonomic_heuristic_with_obstacle
+from .reeds_shepp import Car, RSPath, calc_all_paths, pi_2_pi
 
 
 @dataclass
-class Config:  # Parameter config
+class HybridAstarConfig:  # Parameter config
     XY_RESO: float  # [m]
     YAW_RESO: float  # [rad]
     MOVE_STEP: float  # [m] path interporate resolution
@@ -30,14 +31,7 @@ class Config:  # Parameter config
     STEER_CHANGE_COST: float  # steer angle change penalty cost
     STEER_ANGLE_COST: float  # steer angle penalty cost
     H_COST: float  # Heuristic cost penalty cost
-
-    RF: float  # [m] distance from rear to vehicle front end of vehicle
-    RB: float  # [m] distance from rear to vehicle back end of vehicle
-    W: float  # [m] width of vehicle
-    WD: float  # [m] distance between left-right wheels
-    WB: float  # [m] Wheel base
-    TR: float  # [m] Tyre radius
-    TW: float  # [m] Tyre width
+    car: Car
     MAX_STEER: float  # [rad] maximum steering angle
 
 
@@ -75,13 +69,12 @@ class Param:
 
 
 @dataclass
-class Path:
-    def __init__(self, x, y, yaw, direction, cost):
-        self.x = x
-        self.y = y
-        self.yaw = yaw
-        self.direction = direction
-        self.cost = cost
+class HybridAstarPath:
+    x: list[float]
+    y: list[float]
+    yaw: list[float]
+    direction: list[int]
+    cost: float
 
 
 class QueuePrior:
@@ -109,8 +102,8 @@ def hybrid_astar_planning(
     oy: list[int],
     xyreso: float,
     yawreso: float,
-    conf: Config,
-) -> Path | None:
+    conf: HybridAstarConfig,
+) -> HybridAstarPath | None:
     sxr, syr = int(np.round(sx / xyreso)), int(np.round(sy / xyreso))
     gxr, gyr = int(np.round(gx / xyreso)), int(np.round(gy / xyreso))
     syawr = int(np.round(pi_2_pi(syaw) / yawreso))
@@ -135,8 +128,9 @@ def hybrid_astar_planning(
         n_curr = open_set[ind]
         closed_set[ind] = n_curr
         open_set.pop(ind)
-        explored.append([[n_curr.x[0], n_curr.y[0]], [n_curr.x[-1], n_curr.y[-1]]])
-        rr.log("explored", rr.LineStrips2D(np.array(explored)))
+        # explored.append([[n_curr.x[0], n_curr.y[0]], [n_curr.x[-1], n_curr.y[-1]]])
+        explored.append(list(zip(n_curr.x, n_curr.y)))
+        rr.log("explored", rr.LineStrips2D(explored))
 
         if fpath := update_node_with_analystic_expantion(n_curr, ngoal, P, conf):
             return extract_path(closed_set, fpath, nstart)
@@ -162,22 +156,25 @@ def hybrid_astar_planning(
     return None
 
 
-def extract_path(closed: dict, ngoal: Node, nstart: Node) -> Path:
+def extract_path(closed: dict, ngoal: Node, nstart: Node) -> HybridAstarPath:
     rx, ry, ryaw, direc = [], [], [], []
     cost = 0.0
     node = ngoal
 
-    while True:
-        rx += node.x[::-1]
-        ry += node.y[::-1]
-        ryaw += node.yaw[::-1]
-        direc += node.directions[::-1]
+    while node.pind >= 0:
+        rx += node.x[:1:-1]
+        ry += node.y[:1:-1]
+        ryaw += node.yaw[:1:-1]
+        direc += node.directions[:1:-1]
         cost += node.cost
 
-        if is_same_grid(node, nstart):
-            break
-
         node = closed[node.pind]
+
+    rx += nstart.x[::-1]
+    ry += nstart.y[::-1]
+    ryaw += nstart.yaw[::-1]
+    direc += nstart.directions[::-1]
+    cost += nstart.cost
 
     rx = rx[::-1]
     ry = ry[::-1]
@@ -185,25 +182,30 @@ def extract_path(closed: dict, ngoal: Node, nstart: Node) -> Path:
     direc = direc[::-1]
 
     direc[0] = direc[1]
-    path = Path(rx, ry, ryaw, direc, cost)
+    path = HybridAstarPath(rx, ry, ryaw, direc, cost)
 
     return path
 
 
 def calc_next_node(
-    n_curr: Node, c_id: int, u: float, d: float, P: Param, conf: Config
+    n_curr: Node, c_id: int, u: float, d: float, P: Param, conf: HybridAstarConfig
 ) -> Node | None:
     step = conf.XY_RESO * 2
 
     nlist = math.ceil(step / conf.MOVE_STEP)
-    xlist = [n_curr.x[-1] + d * conf.MOVE_STEP * math.cos(n_curr.yaw[-1])]
-    ylist = [n_curr.y[-1] + d * conf.MOVE_STEP * math.sin(n_curr.yaw[-1])]
-    yawlist = [pi_2_pi(n_curr.yaw[-1] + d * conf.MOVE_STEP / conf.WB * math.tan(u))]
+    xlist = [n_curr.x[-1], n_curr.x[-1] + d * conf.MOVE_STEP * math.cos(n_curr.yaw[-1])]
+    ylist = [n_curr.y[-1], n_curr.y[-1] + d * conf.MOVE_STEP * math.sin(n_curr.yaw[-1])]
+    yawlist = [
+        n_curr.yaw[-1],
+        pi_2_pi(n_curr.yaw[-1] + d * conf.MOVE_STEP / conf.car.wheel_base * math.tan(u)),
+    ]
 
-    for i in range(nlist - 1):
+    for i in range(1, nlist):
         xlist.append(xlist[i] + d * conf.MOVE_STEP * math.cos(yawlist[i]))
         ylist.append(ylist[i] + d * conf.MOVE_STEP * math.sin(yawlist[i]))
-        yawlist.append(pi_2_pi(yawlist[i] + d * conf.MOVE_STEP / conf.WB * math.tan(u)))
+        yawlist.append(
+            pi_2_pi(yawlist[i] + d * conf.MOVE_STEP / conf.car.wheel_base * math.tan(u))
+        )
 
     xind = int(np.round(xlist[-1] / P.xyreso))
     yind = int(np.round(ylist[-1] / P.xyreso))
@@ -244,7 +246,7 @@ def is_index_ok(
     ylist: list[float],
     yawlist: list[float],
     P: Param,
-    conf: Config,
+    conf: HybridAstarConfig,
 ) -> bool:
     if xind <= P.minx or xind >= P.maxx or yind <= P.miny or yind >= P.maxy:
         return False
@@ -259,17 +261,17 @@ def is_index_ok(
 
 
 def update_node_with_analystic_expantion(
-    n_curr: Node, ngoal: Node, P: Param, conf: Config
+    n_curr: Node, ngoal: Node, P: Param, conf: HybridAstarConfig
 ) -> Node | None:
     path = analystic_expantion(n_curr, ngoal, P, conf)  # rs path: n -> ngoal
 
     if not path:
         return None
 
-    fx = path.x[1:-1]
-    fy = path.y[1:-1]
-    fyaw = path.yaw[1:-1]
-    fd = path.directions[1:-1]
+    fx = path.traj_x
+    fy = path.traj_y
+    fyaw = path.traj_yaw
+    fd = path.traj_dirs
 
     fcost = n_curr.cost + calc_rs_path_cost(path, conf)
     fpind = calc_index(n_curr, P)
@@ -293,12 +295,12 @@ def update_node_with_analystic_expantion(
 
 
 def analystic_expantion(
-    node: Node, ngoal: Node, P: Param, conf: Config
+    node: Node, ngoal: Node, P: Param, conf: HybridAstarConfig
 ) -> RSPath | None:
     sx, sy, syaw = node.x[-1], node.y[-1], node.yaw[-1]
     gx, gy, gyaw = ngoal.x[-1], ngoal.y[-1], ngoal.yaw[-1]
 
-    maxc = math.tan(conf.MAX_STEER) / conf.WB
+    maxc = math.tan(conf.MAX_STEER) / conf.car.wheel_base
     paths = calc_all_paths(sx, sy, syaw, gx, gy, gyaw, maxc, step_size=conf.MOVE_STEP)
 
     if paths is None:
@@ -310,11 +312,11 @@ def analystic_expantion(
 
     while not pq.empty():
         path = pq.get()
-        ind = range(0, len(path.x), conf.COLLISION_CHECK_STEP)
+        ind = range(0, len(path.traj_x), conf.COLLISION_CHECK_STEP)
 
-        pathx = [path.x[k] for k in ind]
-        pathy = [path.y[k] for k in ind]
-        pathyaw = [path.yaw[k] for k in ind]
+        pathx = [path.traj_x[k] for k in ind]
+        pathy = [path.traj_y[k] for k in ind]
+        pathyaw = [path.traj_yaw[k] for k in ind]
 
         if not is_collision(pathx, pathy, pathyaw, P, conf):
             return path
@@ -323,11 +325,11 @@ def analystic_expantion(
 
 
 def is_collision(
-    x: list[float], y: list[float], yaw: list[float], P: Param, conf: Config
+    x: list[float], y: list[float], yaw: list[float], P: Param, conf: HybridAstarConfig
 ) -> bool:
-    cp2center = (conf.RF - conf.RB) / 2.0
-    bound_len = (conf.RF + conf.RB) / 2.0 + conf.EXTEND_BOUND
-    bound_wid = conf.W / 2 + conf.EXTEND_BOUND
+    cp2center = (conf.car.center2front - conf.car.center2back) / 2.0
+    bound_len = (conf.car.center2front + conf.car.center2back) / 2.0 + conf.EXTEND_BOUND
+    bound_wid = conf.car.width / 2 + conf.EXTEND_BOUND
     bound_radius = math.hypot(bound_len, bound_wid)
     for ix, iy, iyaw in zip(x, y, yaw):
         cx = ix + cp2center * math.cos(iyaw)
@@ -350,17 +352,17 @@ def is_collision(
     return False
 
 
-def calc_rs_path_cost(rspath: RSPath, conf: Config) -> float:
+def calc_rs_path_cost(rspath: RSPath, conf: HybridAstarConfig) -> float:
     cost = 0.0
 
-    for lr in rspath.lengths:
+    for lr in rspath.move_length:
         if lr >= 0:
             cost += 1
         else:
             cost += abs(lr) * conf.BACKWARD_COST
 
-    for i in range(len(rspath.lengths) - 1):
-        if rspath.lengths[i] * rspath.lengths[i + 1] < 0.0:
+    for i in range(len(rspath.move_length) - 1):
+        if rspath.move_length[i] * rspath.move_length[i + 1] < 0.0:
             cost += conf.GEAR_COST
 
     for ctype in rspath.ctypes:
@@ -383,14 +385,14 @@ def calc_rs_path_cost(rspath: RSPath, conf: Config) -> float:
 
 
 def calc_hybrid_cost(
-    node: Node, hmap: list[list[float]], P: Param, conf: Config
+    node: Node, hmap: list[list[float]], P: Param, conf: HybridAstarConfig
 ) -> float:
     cost = node.cost + conf.H_COST * hmap[node.xind - P.minx][node.yind - P.miny]
 
     return cost
 
 
-def calc_motion_set(conf: Config) -> tuple[list[float], list[float]]:
+def calc_motion_set(conf: HybridAstarConfig) -> tuple[list[float], list[float]]:
     s = np.arange(
         conf.MAX_STEER / conf.N_STEER,
         conf.MAX_STEER,
@@ -455,176 +457,3 @@ def calc_parameters(
         oy,
         kdtree,
     )
-
-
-def draw_car(x, y, yaw, steer, conf: Config):
-    car = np.array(
-        [
-            [-conf.RB, -conf.RB, conf.RF, conf.RF, -conf.RB],
-            [conf.W / 2, -conf.W / 2, -conf.W / 2, conf.W / 2, conf.W / 2],
-        ]
-    )
-
-    wheel = np.array(
-        [
-            [-conf.TR, -conf.TR, conf.TR, conf.TR, -conf.TR],
-            [
-                conf.TW / 4,
-                -conf.TW / 4,
-                -conf.TW / 4,
-                conf.TW / 4,
-                conf.TW / 4,
-            ],
-        ]
-    )
-
-    rlWheel = wheel.copy()
-    rrWheel = wheel.copy()
-    frWheel = wheel.copy()
-    flWheel = wheel.copy()
-
-    Rot1 = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]])
-
-    Rot2 = np.array(
-        [[math.cos(steer), math.sin(steer)], [-math.sin(steer), math.cos(steer)]]
-    )
-
-    frWheel = np.dot(Rot2, frWheel)
-    flWheel = np.dot(Rot2, flWheel)
-
-    frWheel += np.array([[conf.WB], [-conf.WD / 2]])
-    flWheel += np.array([[conf.WB], [conf.WD / 2]])
-    rrWheel[1, :] -= conf.WD / 2
-    rlWheel[1, :] += conf.WD / 2
-
-    frWheel = np.dot(Rot1, frWheel)
-    flWheel = np.dot(Rot1, flWheel)
-
-    rrWheel = np.dot(Rot1, rrWheel)
-    rlWheel = np.dot(Rot1, rlWheel)
-    car = np.dot(Rot1, car)
-
-    frWheel += np.array([[x], [y]])
-    flWheel += np.array([[x], [y]])
-    rrWheel += np.array([[x], [y]])
-    rlWheel += np.array([[x], [y]])
-    car += np.array([[x], [y]])
-
-    rr.log("car/body", rr.LineStrips2D(car.T))
-    rr.log("car/fr_wheel", rr.LineStrips2D(frWheel.T))
-    rr.log("car/rr_wheel", rr.LineStrips2D(rrWheel.T))
-    rr.log("car/fl_wheel", rr.LineStrips2D(flWheel.T))
-    rr.log("car/rl_wheel", rr.LineStrips2D(rlWheel.T))
-    rr.log("car/dir", rr.Arrows2D(vectors=(np.cos(yaw), np.sin(yaw)), origins=(x, y)))
-
-
-def design_obstacles(x: int, y: int) -> tuple[list[int], list[int]]:
-    ox, oy = [], []
-
-    for i in range(x):
-        ox.append(i)
-        oy.append(0)
-    for i in range(x):
-        ox.append(i)
-        oy.append(y - 1)
-    for i in range(y):
-        ox.append(0)
-        oy.append(i)
-    for i in range(y):
-        ox.append(x - 1)
-        oy.append(i)
-    for i in range(10, 21):
-        ox.append(i)
-        oy.append(15)
-    for i in range(15):
-        ox.append(20)
-        oy.append(i)
-    for i in range(15, 30):
-        ox.append(30)
-        oy.append(i)
-    for i in range(16):
-        ox.append(40)
-        oy.append(i)
-
-    return ox, oy
-
-
-def main():
-    rr.init("hybrid_astar", spawn=True)
-    rr.set_time_seconds("step", 0)
-
-    print("hybrid_astar start!")
-    this_conf = Config(
-        2.0,
-        np.deg2rad(15.0),
-        0.4,
-        20,
-        5,
-        1.4,
-        100.0,
-        5.0,
-        5.0,
-        1.0,
-        15.0,
-        4.5,
-        1.0,
-        3.0,
-        0.7 * 3.0,
-        3.5,
-        0.5,
-        1.0,
-        0.6,
-    )
-    x, y = 51, 31
-    sx, sy, syaw0 = 10.0, 7.0, np.deg2rad(120.0)
-    gx, gy, gyaw0 = 45.0, 20.0, np.deg2rad(90.0)
-    rr.log("start", rr.Points2D((sx, sy)))
-    rr.log("goal", rr.Points2D((gx, gy)))
-
-    ox, oy = design_obstacles(x, y)
-    rr.log(
-        "obstacles", rr.Boxes2D(sizes=[1, 1] * len(ox), centers=np.array((ox, oy)).T)
-    )
-
-    t0 = time.perf_counter()
-    path = hybrid_astar_planning(
-        sx,
-        sy,
-        syaw0,
-        gx,
-        gy,
-        gyaw0,
-        ox,
-        oy,
-        this_conf.XY_RESO,
-        this_conf.YAW_RESO,
-        this_conf,
-    )
-    t1 = time.perf_counter()
-    print("running T: ", t1 - t0)
-
-    if not path:
-        print("Searching failed!")
-        return
-
-    x = path.x
-    y = path.y
-    yaw = path.yaw
-    direction = path.direction
-    rr.log("path", rr.LineStrips2D(np.array((x, y)).T))
-
-    for k in range(len(x)):
-        rr.set_time_seconds("step", k)
-        if k < len(x) - 2:
-            dy = (yaw[k + 1] - yaw[k]) / this_conf.MOVE_STEP
-            steer = pi_2_pi(math.atan(-this_conf.WB * dy / direction[k]))
-        else:
-            steer = 0.0
-
-        draw_car(x[k], y[k], yaw[k], steer, this_conf)
-
-    print("Done!")
-
-
-if __name__ == "__main__":
-    main()
