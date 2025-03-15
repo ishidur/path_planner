@@ -10,7 +10,6 @@ from path_planner_py import (
     calc_optimal_path,
     draw_car,
     hybrid_astar_planning,
-    pi_2_pi,
 )
 
 
@@ -90,8 +89,6 @@ def design_obstacles(x: int, y: int) -> tuple[list[int], list[int]]:
 
 def hyb_astar():
     rr.init("hybrid_astar", spawn=True)
-    rr.set_time_seconds("step", 0)
-
     print("hybrid_astar start!")
 
     car = Car(
@@ -153,7 +150,6 @@ def hyb_astar():
     rr.log("path", rr.LineStrips2D(np.array((x, y)).T))
 
     for k in range(len(x)):
-        rr.set_time_seconds("step", k)
         draw_car(x[k], y[k], yaw[k], car)
 
     print("Done!")

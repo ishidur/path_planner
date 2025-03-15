@@ -10,10 +10,10 @@ pub struct RSPath {
     pub lengths: Vec<f64>, // lengths of each part of path (+: forward, -: backward)
     pub ctypes: Vec<char>, // type of each part of the path
     pub total_length: f64, // total path length
-    pub x: Vec<f64>,       // final x positions [m]
-    pub y: Vec<f64>,       // final y positions [m]
-    pub yaw: Vec<f64>,     // final yaw angles [rad]
-    pub directions: Vec<isize>, // forward: 1, backward: -1
+    pub traj_x: Vec<f64>,       // final x positions [m]
+    pub traj_y: Vec<f64>,       // final y positions [m]
+    pub traj_yaw: Vec<f64>,     // final yaw angles [rad]
+    pub traj_dirs: Vec<isize>, // forward: 1, backward: -1
 }
 
 impl RSPath {
@@ -21,43 +21,38 @@ impl RSPath {
         lengths: Vec<f64>,
         ctypes: Vec<char>,
         total_length: f64,
-        x: Vec<f64>,
-        y: Vec<f64>,
-        yaw: Vec<f64>,
-        directions: Vec<isize>,
+        traj_x: Vec<f64>,
+        traj_y: Vec<f64>,
+        traj_yaw: Vec<f64>,
+        traj_dirs: Vec<isize>,
     ) -> Self {
         RSPath {
             lengths,
             ctypes,
             total_length,
-            x,
-            y,
-            yaw,
-            directions,
+            traj_x,
+            traj_y,
+            traj_yaw,
+            traj_dirs,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Car {
-    rf: f64, // [m] distance from rear to vehicle front end of vehicle
-    rb: f64, // [m] distance from rear to vehicle back end of vehicle
-    w: f64,  // [m] width of vehicle
-    wd: f64, // [m] distance between left-right wheels
-    pub wb: f64, // [m] Wheel base
-    tr: f64, // [m] Tyre radius
-    tw: f64, // [m] Tyre width
+    pub center2front: f64, // [m] distance from rear to vehicle front end of vehicle
+    pub center2back: f64,  // [m] distance from rear to vehicle back end of vehicle
+    pub width: f64,        // [m] width of vehicle
+    pub wheel_base: f64,   // [m] Wheel base
 }
 
 impl Car {
-    pub fn new(rf: f64, rb: f64, w: f64, wd: f64, wb: f64, tr: f64, tw: f64) -> Self {
+    pub fn new(center2front: f64, center2back: f64, width: f64, wheel_base: f64) -> Self {
         Self {
-            rf,
-            rb,
-            w,
-            wd,
-            wb,
-            tr,
-            tw,
+            center2front,
+            center2back,
+            width,
+            wheel_base,
         }
     }
 }
@@ -96,38 +91,38 @@ pub fn calc_all_paths(
     gx: f64,
     gy: f64,
     gyaw: f64,
-    maxc: f64,
+    max_curvature: f64,
     step_size: f64,
 ) -> Vec<RSPath> {
     let q0 = [sx, sy, syaw];
     let q1 = [gx, gy, gyaw];
 
-    let mut paths = generate_path(&q0, &q1, maxc);
+    let mut paths = generate_path(&q0, &q1, max_curvature);
 
     for path in &mut paths {
         let (x, y, yaw, directions) = generate_local_course(
             path.total_length,
             &path.lengths,
             &path.ctypes,
-            maxc,
-            step_size * maxc,
+            max_curvature,
+            step_size * max_curvature,
         );
 
         // convert global coordinate
-        path.x = x
+        path.traj_x = x
             .iter()
             .zip(&y)
             .map(|(&ix, &iy)| ix * (-q0[2]).cos() + iy * (-q0[2]).sin() + q0[0])
             .collect();
-        path.y = x
+        path.traj_y = x
             .iter()
             .zip(&y)
             .map(|(&ix, &iy)| -ix * (-q0[2]).sin() + iy * (-q0[2]).cos() + q0[1])
             .collect();
-        path.yaw = yaw.iter().map(|iyaw| pi_2_pi(iyaw + q0[2])).collect();
-        path.directions = directions;
-        path.lengths = path.lengths.iter().map(|l| l / maxc).collect();
-        path.total_length /= maxc;
+        path.traj_yaw = yaw.iter().map(|iyaw| pi_2_pi(iyaw + q0[2])).collect();
+        path.traj_dirs = directions;
+        path.lengths = path.lengths.iter().map(|l| l / max_curvature).collect();
+        path.total_length /= max_curvature;
     }
     paths
 }
@@ -356,7 +351,7 @@ fn lrlrp(x: f64, y: f64, phi: f64) -> (bool, f64, f64, f64) {
     let eta = y - 1.0 - phi.cos();
     let rho = (20. - xi.powi(2) - eta.powi(2)) / 16.0;
 
-    if (0.0 < rho) & (rho <= 1.0) {
+    if (0.0 <= rho) & (rho <= 1.0) {
         let u = -rho.acos();
         if u >= -0.5 * PI {
             let (t, v) = calc_tau_omega(u, u, xi, eta, phi);
@@ -690,7 +685,7 @@ fn interpolate(
             ldy = (1.0 - l.cos()) / maxc;
         } else {
             // m == 'R'
-            ldy = -(1. - l.cos()) / maxc;
+            ldy = -(1.0 - l.cos()) / maxc;
         }
         let gdx = (-oyaw).cos() * ldx + (-oyaw).sin() * ldy;
         let gdy = -(-oyaw).sin() * ldx + (-oyaw).cos() * ldy;
@@ -761,67 +756,18 @@ fn m(theta: f64) -> f64 {
     phi
 }
 
-pub fn draw_car(x: f64, y: f64, yaw: f64, steer: f64, car: &Car, rec: &rerun::RecordingStream) {
+pub fn draw_car(x: f64, y: f64, yaw: f64, car: &Car, rec: &rerun::RecordingStream) {
     let body = [
-        [-car.rb, car.w / 2.],
-        [-car.rb, -car.w / 2.],
-        [car.rf, -car.w / 2.],
-        [car.rf, car.w / 2.],
-        [-car.rb, car.w / 2.],
+        [-car.center2back, car.width / 2.],
+        [-car.center2back, -car.width / 2.],
+        [car.center2front, -car.width / 2.],
+        [car.center2front, car.width / 2.],
+        [-car.center2back, car.width / 2.],
     ];
-    let wheel = [
-        [-car.tr, car.tw / 4.],
-        [-car.tr, -car.tw / 4.],
-        [car.tr, -car.tw / 4.],
-        [car.tr, car.tw / 4.],
-        [-car.tr, car.tw / 4.],
-    ];
-    let f_wheel: Vec<(f64, f64)> = wheel.into_iter().map(|p| rot2d(&p, -steer)).collect();
-    let fr_wheel: Vec<(f64, f64)> = f_wheel
-        .clone()
-        .into_iter()
-        .map(|p| (p.0 + car.wb, p.1 - car.wd / 2.))
-        .collect();
-    let fl_wheel: Vec<(f64, f64)> = f_wheel
-        .into_iter()
-        .map(|p| (p.0 + car.wb, p.1 + car.wd / 2.))
-        .collect();
-    let rr_wheel: Vec<(f64, f64)> = wheel
-        .into_iter()
-        .map(|p| (p[0], p[1] - car.wd / 2.))
-        .collect();
-    let rl_wheel: Vec<(f64, f64)> = wheel
-        .into_iter()
-        .map(|p| (p[0], p[1] + car.wd / 2.))
-        .collect();
-    let fr_wheel: Vec<Vec2> = fr_wheel
-        .into_iter()
-        .map(|p| rot2d(&[p.0, p.1], yaw))
-        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
-        .collect();
-    let fl_wheel: Vec<Vec2> = fl_wheel
-        .into_iter()
-        .map(|p| rot2d(&[p.0, p.1], yaw))
-        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
-        .collect();
-    let rr_wheel: Vec<Vec2> = rr_wheel
-        .into_iter()
-        .map(|p| rot2d(&[p.0, p.1], yaw))
-        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
-        .collect();
-    let rl_wheel: Vec<Vec2> = rl_wheel
-        .into_iter()
-        .map(|p| rot2d(&[p.0, p.1], yaw))
-        .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
-        .collect();
     let body: Vec<Vec2> = body
         .into_iter()
         .map(|p| rot2d(&p, yaw))
         .map(|p| Vec2::new((p.0 + x) as f32, (p.1 + y) as f32))
         .collect();
     let _ = rec.log("car/body", &rerun::LineStrips2D::new([body]));
-    let _ = rec.log("car/fr_wheel", &rerun::LineStrips2D::new([fr_wheel]));
-    let _ = rec.log("car/rr_wheel", &rerun::LineStrips2D::new([rr_wheel]));
-    let _ = rec.log("car/fl_wheel", &rerun::LineStrips2D::new([fl_wheel]));
-    let _ = rec.log("car/rl_wheel", &rerun::LineStrips2D::new([rl_wheel]));
 }

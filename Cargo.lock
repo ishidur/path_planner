@@ -2866,16 +2866,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
-name = "hybrid_a_star"
-version = "0.1.0"
-dependencies = [
- "arrow-arith 54.2.1",
- "kdtree",
- "ordered-float 5.0.0",
- "rerun",
-]
-
-[[package]]
 name = "hyper"
 version = "0.14.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4350,6 +4340,16 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "path_planning"
+version = "0.1.0"
+dependencies = [
+ "arrow-arith 54.2.1",
+ "kdtree",
+ "ordered-float 5.0.0",
+ "rerun",
+]
 
 [[package]]
 name = "pathdiff"

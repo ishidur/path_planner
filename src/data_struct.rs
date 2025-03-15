@@ -2,7 +2,7 @@
 pub struct Node {
     pub xind: usize,
     pub yind: usize,
-    pub yawind: usize,
+    pub yawind: isize,
     pub direction: isize,
     pub x: Vec<f64>,
     pub y: Vec<f64>,
@@ -17,7 +17,7 @@ impl Node {
     pub fn new(
         xind: usize,
         yind: usize,
-        yawind: usize,
+        yawind: isize,
         direction: isize,
         x: Vec<f64>,
         y: Vec<f64>,

@@ -57,14 +57,12 @@ class Param:
     minyaw: int
     maxx: int
     maxy: int
-    maxyaw: int
     xw: int
     yw: int
-    yaww: int
     xyreso: float
     yawreso: float
-    ox: list[int]
-    oy: list[int]
+    ox: list[float]
+    oy: list[float]
     kdtree: KDTree
 
 
@@ -193,18 +191,15 @@ def calc_next_node(
     step = conf.XY_RESO * 2
 
     nlist = math.ceil(step / conf.MOVE_STEP)
-    xlist = [n_curr.x[-1], n_curr.x[-1] + d * conf.MOVE_STEP * math.cos(n_curr.yaw[-1])]
-    ylist = [n_curr.y[-1], n_curr.y[-1] + d * conf.MOVE_STEP * math.sin(n_curr.yaw[-1])]
-    yawlist = [
-        n_curr.yaw[-1],
-        pi_2_pi(n_curr.yaw[-1] + d * conf.MOVE_STEP / conf.car.wheel_base * math.tan(u)),
-    ]
+    xlist = [n_curr.x[-1]] * (nlist + 1)
+    ylist = [n_curr.y[-1]] * (nlist + 1)
+    yawlist = [n_curr.yaw[-1]] * (nlist + 1)
 
-    for i in range(1, nlist):
-        xlist.append(xlist[i] + d * conf.MOVE_STEP * math.cos(yawlist[i]))
-        ylist.append(ylist[i] + d * conf.MOVE_STEP * math.sin(yawlist[i]))
-        yawlist.append(
-            pi_2_pi(yawlist[i] + d * conf.MOVE_STEP / conf.car.wheel_base * math.tan(u))
+    for i in range(nlist):
+        xlist[i + 1] = xlist[i] + d * conf.MOVE_STEP * math.cos(yawlist[i])
+        ylist[i + 1] = ylist[i] + d * conf.MOVE_STEP * math.sin(yawlist[i])
+        yawlist[i + 1] = pi_2_pi(
+            yawlist[i] + d * conf.MOVE_STEP / conf.car.wheel_base * math.tan(u)
         )
 
     xind = int(np.round(xlist[-1] / P.xyreso))
@@ -375,7 +370,7 @@ def calc_rs_path_cost(rspath: RSPath, conf: HybridAstarConfig) -> float:
     for i in range(nctypes):
         if rspath.ctypes[i] == "R":
             ulist[i] = -conf.MAX_STEER
-        elif rspath.ctypes[i] == "WB":
+        elif rspath.ctypes[i] == "L":
             ulist[i] = conf.MAX_STEER
 
     for i in range(nctypes - 1):
@@ -406,17 +401,6 @@ def calc_motion_set(conf: HybridAstarConfig) -> tuple[list[float], list[float]]:
     return steer, direc
 
 
-def is_same_grid(node1: Node, node2: Node) -> bool:
-    if (
-        node1.xind != node2.xind
-        or node1.yind != node2.yind
-        or node1.yawind != node2.yawind
-    ):
-        return False
-
-    return True
-
-
 def calc_index(node: Node, P: Param) -> int:
     ind = (
         (node.yawind - P.minyaw) * P.xw * P.yw
@@ -438,8 +422,6 @@ def calc_parameters(
     xw, yw = maxx - minx, maxy - miny
 
     minyaw = int(np.round(-np.pi / yawreso)) - 1
-    maxyaw = int(np.round(np.pi / yawreso))
-    yaww = maxyaw - minyaw
 
     return Param(
         minx,
@@ -447,10 +429,8 @@ def calc_parameters(
         minyaw,
         maxx,
         maxy,
-        maxyaw,
         xw,
         yw,
-        yaww,
         xyreso,
         yawreso,
         ox,

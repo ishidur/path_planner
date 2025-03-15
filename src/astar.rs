@@ -59,7 +59,7 @@ pub fn astar_planning(
     oy: &[f64],
     reso: f64,
     rr: f64,
-    rec: &rerun::RecordingStream,
+    rec: Option<&rerun::RecordingStream>,
 ) -> Option<(Vec<f64>, Vec<f64>)> {
     let n_start = HolonomicNode::new(
         (sx / reso).round() as usize,
@@ -94,8 +94,10 @@ pub fn astar_planning(
         let (_, ind) = q_priority.pop().unwrap();
         let n_curr = open_set.remove(&ind).unwrap();
         closed_set.insert(ind, n_curr);
-        explored.push(Vec2::new(n_curr.x as f32, n_curr.y as f32));
-        let _ = rec.log("explored", &rerun::Points2D::new(explored.clone()));
+        if rec.is_some() {
+            explored.push(Vec2::new(n_curr.x as f32, n_curr.y as f32));
+            let _ = rec?.log("explored", &rerun::Points2D::new(explored.clone()));
+        }
         if goal_ind == ind {
             return Some(extract_path(&closed_set, &n_start, &n_goal, &param));
         }
@@ -209,7 +211,7 @@ fn check_node(node: &HolonomicNode, param: &Param, obsmap: &[Vec<bool>]) -> bool
 }
 
 fn u_cost(u: (isize, isize)) -> f64 {
-    ((u.0 * u.0 + u.1 * u.1) as f64).sqrt()
+    f64::hypot(u.0 as f64, u.1 as f64)
 }
 
 fn fvalue(node: HolonomicNode, n_goal: HolonomicNode) -> f64 {
@@ -217,9 +219,10 @@ fn fvalue(node: HolonomicNode, n_goal: HolonomicNode) -> f64 {
 }
 
 fn h(node: HolonomicNode, n_goal: HolonomicNode) -> f64 {
-    (((node.x as isize - n_goal.x as isize).pow(2) + (node.y as isize - n_goal.y as isize).pow(2))
-        as f64)
-        .sqrt()
+    f64::hypot(
+        node.x as f64 - n_goal.x as f64,
+        node.y as f64 - n_goal.y as f64,
+    )
 }
 
 fn calc_index(node: &HolonomicNode, param: &Param) -> usize {
@@ -302,36 +305,4 @@ fn get_motion() -> Vec<(isize, isize)> {
         (0, -1),
         (-1, -1),
     ]
-}
-
-pub fn get_env() -> (Vec<f64>, Vec<f64>) {
-    let mut ox = Vec::new();
-    let mut oy = Vec::new();
-
-    for i in 0..60 {
-        ox.push(i as f64);
-        oy.push(0.0);
-    }
-    for i in 0..60 {
-        ox.push(60.0);
-        oy.push(i as f64);
-    }
-    for i in 0..61 {
-        ox.push(i as f64);
-        oy.push(60.0);
-    }
-    for i in 0..61 {
-        ox.push(0.0);
-        oy.push(i as f64);
-    }
-    for i in 0..40 {
-        ox.push(20.0);
-        oy.push(i as f64);
-    }
-    for i in 0..40 {
-        ox.push(40.0);
-        oy.push(60.0 - i as f64);
-    }
-
-    (ox, oy)
 }

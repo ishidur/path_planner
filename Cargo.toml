@@ -1,5 +1,5 @@
 [package]
-name = "hybrid_a_star"
+name = "path_planning"
 version = "0.1.0"
 edition = "2024"
 
